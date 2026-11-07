@@ -1,0 +1,17 @@
+{
+  "name": "eggtrack-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0"
+  }
+}
