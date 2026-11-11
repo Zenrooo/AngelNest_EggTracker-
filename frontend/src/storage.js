@@ -31,3 +31,26 @@ export function createRepository(storage) {
     },
   };
 }
+
+
+// Demo-only account storage. Do not use localStorage for real credentials.
+export const ACCOUNT_STORAGE_KEY = "eggtrack.accounts.v1";
+
+export function getAccounts(storage) {
+  try {
+    const accounts = JSON.parse(storage.getItem(ACCOUNT_STORAGE_KEY) || "[]");
+    return Array.isArray(accounts) ? accounts : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveAccount(storage, account) {
+  const accounts = getAccounts(storage);
+  const email = account.email.trim().toLowerCase();
+  if (accounts.some((saved) => saved.email === email)) {
+    throw new Error("An account with this email already exists.");
+  }
+  accounts.push({ ...account, email });
+  storage.setItem(ACCOUNT_STORAGE_KEY, JSON.stringify(accounts));
+}

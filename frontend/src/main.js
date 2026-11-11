@@ -10,7 +10,12 @@ import {
   money,
   whole,
 } from "./domain.js";
-import { createRepository, STORAGE_KEY } from "./storage.js";
+import {
+  createRepository,
+  STORAGE_KEY,
+  getAccounts,
+  saveAccount,
+} from "./storage.js";
 
 const root = document.querySelector("#app");
 const pages = {
@@ -50,6 +55,9 @@ let state;
 let storageError = "";
 let notice = null;
 let page = "dashboard";
+// Demo authentication state. Accounts are stored in localStorage.
+let mockLoggedIn = false;
+let authMode = "login";
 try {
   repository = createRepository(window.localStorage);
   state = repository.load();
@@ -185,6 +193,10 @@ function expenses() {
 }
 
 function render() {
+  if (!mockLoggedIn) {
+    loginScreen();
+    return;
+  }
   page = Object.hasOwn(pages, location.hash.slice(1))
     ? location.hash.slice(1)
     : "dashboard";
@@ -198,7 +210,7 @@ function render() {
         `<a href="#${key}" ${key === page ? 'aria-current="page"' : ""}>${icon(key)}${title}</a>`,
     )
     .join("")}</nav></aside>
-    <div class="workspace"><header class="topbar"><div><h1>${pages[page]}</h1>${page === "dashboard" ? "<p>Overview of farm operations</p>" : ""}</div>${page === "dashboard" ? '<a class="button primary" href="#production">Record Production</a>' : ""}</header>
+    <div class="workspace"><header class="topbar"><div><h1>${pages[page]}</h1>${page === "dashboard" ? "<p>Overview of farm operations</p>" : ""}</div> <button class="button secondary" type="button" data-action="mock-logout">Sign out</button></header>
     <main id="main-content" tabindex="-1"><div class="demo-banner"><p>Demo mode — Data is stored locally.</p><button type="button" class="text-button" data-action="reset">Reset Demo Data</button></div>
     ${storageError ? `<div class="storage-error" role="alert">${esc(storageError)}</div>` : ""}
     ${notice ? `<div class="notice" role="status">${esc(notice)}</div>` : ""}
@@ -206,6 +218,64 @@ function render() {
     <footer><span>${state.events.length} demo transactions · All dates</span><span>${storageError ? "Storage needs attention" : "Stored on this device"} · No real farm records</span></footer></main></div>
     <dialog id="reset-dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reset demo data</h2><p>This replaces EggTrack demo transactions in this browser only. Choose sample records or an empty workspace for the 95-egg walkthrough.</p><div class="dialog-actions"><button class="button primary" data-reset="sample">Restore sample data</button><button class="button secondary" data-reset="empty">Start empty demo</button><button class="text-button" data-action="cancel-reset">Cancel</button></div><p class="form-feedback" role="alert"></p></dialog>`;
   updateCalculations();
+}
+
+
+// Login and registration screens for the localStorage-only prototype.
+function loginScreen() {
+  document.title = `${authMode === "login" ? "Login" : "Create Account"} | EggTrack`;
+  const isRegister = authMode === "register";
+  root.innerHTML = `
+    <main class="login-page">
+      <section class="login-card" aria-labelledby="login-title">
+        <div class="login-brand">
+          <a class="login-brand-name" href="#" aria-label="EggTrack home">EggTrack</a>
+          <p>Golden Nest Poultry Farm</p>
+        </div>
+
+        <div class="login-heading">
+          <h1 id="login-title">${isRegister ? "Create Your Account" : "Welcome Back"}</h1>
+          <p>${isRegister ? "Register to access the farm dashboard." : "Sign in to access your farm dashboard."}</p>
+        </div>
+
+        <form id="${isRegister ? "register-form" : "login-form"}" novalidate>
+          ${isRegister ? `
+            <label for="register-name">Full Name</label>
+            <input id="register-name" name="name" type="text" placeholder="Enter your full name" autocomplete="name" required>
+          ` : ""}
+          <label for="${isRegister ? "register-email" : "login-email"}">Email</label>
+          <input id="${isRegister ? "register-email" : "login-email"}" name="email" type="email" placeholder="Enter your email" autocomplete="email" required>
+
+          <label for="${isRegister ? "register-password" : "login-password"}">Password</label>
+          <div class="password-field">
+            <input
+              id="${isRegister ? "register-password" : "login-password"}"
+              name="password"
+              type="password"
+              placeholder="${isRegister ? "Create a password (at least 6 characters)" : "Enter your password"}"
+              autocomplete="${isRegister ? "new-password" : "current-password"}"
+              required
+            >
+            ${isRegister ? "" : '<button class="password-toggle" type="button" data-action="toggle-password" aria-label="Show password">Show</button>'}
+          </div>
+          ${isRegister ? `
+            <label for="register-confirm-password">Confirm Password</label>
+            <input id="register-confirm-password" name="confirmPassword" type="password" placeholder="Re-enter your password" autocomplete="new-password" required>
+          ` : `
+            <div class="login-options">
+              <span></span>
+              <button class="login-link" type="button" data-action="forgot-password">Forgot password?</button>
+            </div>
+          `}
+          <p class="login-feedback" id="login-feedback" role="alert"></p>
+          <button class="button primary login-submit" type="submit">${isRegister ? "Create Account" : "Sign In"}</button>
+        </form>
+
+        <p class="login-switch">${isRegister ? "Already have an account?" : "Don't have an account?"} <button class="login-link" type="button" data-action="switch-auth">${isRegister ? "Sign in" : "Create account"}</button></p>
+        <p class="login-footer">Authorized personnel only</p>
+        <p class="login-demo-note">Prototype only: accounts are saved in this browser's localStorage. Do not use real or sensitive passwords.</p>
+      </section>
+    </main>`;
 }
 
 function updateCalculations() {
@@ -251,6 +321,57 @@ root.addEventListener("change", updateCalculations);
 root.addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.target;
+
+  // Create a local demo account. Passwords are stored as plain text, for prototype use only.
+  if (form.id === "register-form") {
+    const data = Object.fromEntries(new FormData(form));
+    const feedback = root.querySelector("#login-feedback");
+    if (!data.name?.trim() || !data.email?.trim() || !data.password) {
+      feedback.textContent = "Complete all fields before creating your account.";
+      return;
+    }
+    if (data.password.length < 6) {
+      feedback.textContent = "Your password must be at least 6 characters.";
+      return;
+    }
+    if (data.password !== data.confirmPassword) {
+      feedback.textContent = "The passwords do not match.";
+      return;
+    }
+    try {
+      saveAccount(window.localStorage, {
+        name: data.name.trim(),
+        email: data.email.trim().toLowerCase(),
+        password: data.password,
+        createdAt: new Date().toISOString(),
+      });
+      authMode = "login";
+      loginScreen();
+      root.querySelector("#login-feedback").textContent = "Account created. You can now sign in.";
+    } catch (error) {
+      feedback.textContent = error.message || "Could not save the account in this browser.";
+    }
+    return;
+  }
+
+  // Verify the entered credentials against accounts saved in localStorage.
+  if (form.id === "login-form") {
+    const data = Object.fromEntries(new FormData(form));
+    const feedback = root.querySelector("#login-feedback");
+    const email = data.email?.trim().toLowerCase();
+    const account = getAccounts(window.localStorage).find(
+      (saved) => saved.email === email && saved.password === data.password,
+    );
+    if (!account) {
+      feedback.textContent = "Email or password is incorrect. Create an account first if you are a new user.";
+      return;
+    }
+    mockLoggedIn = true;
+    notice = `Welcome, ${account.name}.`;
+    render();
+    return;
+  }
+
   const data = Object.fromEntries(new FormData(form));
   const type = {
     "production-form": "production",
@@ -290,6 +411,33 @@ root.addEventListener("click", (event) => {
   }
   const target = event.target.closest("button");
   if (!target) return;
+
+  if (target.dataset.action === "switch-auth") {
+    authMode = authMode === "login" ? "register" : "login";
+    loginScreen();
+    return;
+  }
+  if (target.dataset.action === "toggle-password") {
+    const password = root.querySelector("#login-password");
+    const showing = password.type === "text";
+    password.type = showing ? "password" : "text";
+    target.textContent = showing ? "Show" : "Hide";
+    target.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    return;
+  }
+  if (target.dataset.action === "forgot-password") {
+    root.querySelector("#login-feedback").textContent =
+      "Please contact Tech Admin for assistance xd.";
+    return;
+  }
+  if (target.dataset.action === "mock-logout") {
+    mockLoggedIn = false;
+    notice = null;
+    location.hash = "#dashboard";
+    loginScreen();
+    return;
+  }
+
   if (target.dataset.action === "toggle-nav") {
     const open = root.querySelector(".sidebar").classList.toggle("is-open");
     target.setAttribute("aria-expanded", String(open));
